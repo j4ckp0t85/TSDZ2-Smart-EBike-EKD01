@@ -102,6 +102,7 @@ static uint8_t ui8_duty_cycle_ramp_down_inverse_step = PWM_DUTY_CYCLE_RAMP_DOWN_
 static uint8_t ui8_duty_cycle_ramp_down_inverse_step_default = PWM_DUTY_CYCLE_RAMP_DOWN_INVERSE_STEP_DEFAULT;
 static uint16_t ui16_battery_voltage_filtered_x10 = 0;
 static uint16_t ui16_battery_pack_resistance_x1000 = BATTERY_PACK_RESISTANCE;
+static uint16_t ui16_battery_current_filtered_soc_x10 = 0;
 static uint8_t ui8_battery_current_filtered_x10 = 0;
 static uint8_t ui8_adc_battery_current_max = ADC_10_BIT_BATTERY_CURRENT_MAX;
 static uint8_t ui8_adc_battery_current_target = 0;
@@ -3526,9 +3527,12 @@ static void check_battery_soc(void)
 	uint16_t ui16_fluctuate_battery_voltage_x10;
 	uint16_t ui16_battery_voltage_calibrated_x10;
 	
-	// calculate fluctuate voltage, that depends on the current and battery pack resistance
+	// filter the current used for sag compensation to remove 2-3 Hz pedaling ripple
+	ui16_battery_current_filtered_soc_x10 = filter((uint16_t) ui8_battery_current_filtered_x10, ui16_battery_current_filtered_soc_x10, 13);
+	
+	// calculate fluctuate voltage, that depends on the filtered current and battery pack resistance
 	ui16_fluctuate_battery_voltage_x10 = (uint16_t) ((((uint32_t) ui16_battery_pack_resistance_x1000)
-			* ((uint32_t) ui8_battery_current_filtered_x10))
+			* ((uint32_t) ui16_battery_current_filtered_soc_x10))
 			/ ((uint32_t) 1000U));
 	
 	// the fluctuate voltage is added to the battery voltage x10
@@ -3537,28 +3541,31 @@ static void check_battery_soc(void)
 	// battery voltage calibrated x10
 	ui16_battery_voltage_calibrated_x10 = (ui16_battery_voltage_x10 * ACTUAL_BATTERY_VOLTAGE_PERCENT) / 100U;
 	
-	// battery voltage calibrated and filtered x10
-	ui16_battery_voltage_calibrated_and_filtered_x10 = filter(ui16_battery_voltage_calibrated_x10, ui16_battery_voltage_calibrated_and_filtered_x10, 4);
+	// battery voltage calibrated and filtered x10 (alpha 13 for ~1.45s settling time to attenuate pedaling ripple)
+	ui16_battery_voltage_calibrated_and_filtered_x10 = filter(ui16_battery_voltage_calibrated_x10, ui16_battery_voltage_calibrated_and_filtered_x10, 13);
 	
+	// hysteresis of ~100 mV/cell (active only after initial power-on reset) to avoid edge flickering on display
+	uint16_t ui16_hyst = (ui8_battery_SOC_reset_flag) ? (uint16_t)(BATTERY_CELLS_NUMBER * 1U) : 0U;
+
 #if ENABLE_VLCD6 || ENABLE_XH18
 	if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_OVERVOLTAGE_X10) { ui8_battery_state_of_charge = 7; }		// overvoltage
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_SOC_RESET_X10) { ui8_battery_state_of_charge = 6; }	// 4 bars -> SOC reset
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_FULL_X10) { ui8_battery_state_of_charge = 5; }	// 4 bars -> full
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_3_X10) { ui8_battery_state_of_charge = 4; }	// 3 bars
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_2_X10) { ui8_battery_state_of_charge = 3; }	// 2 bars
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_1_X10) { ui8_battery_state_of_charge = 2; }	// 1 bar
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_EMPTY_X10) { ui8_battery_state_of_charge = 1; }	// blink -> empty
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_SOC_RESET_X10 + ((ui8_battery_state_of_charge < 6) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 6; }	// 4 bars -> SOC reset
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_FULL_X10 + ((ui8_battery_state_of_charge < 5) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 5; }	// 4 bars -> full
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_3_X10 + ((ui8_battery_state_of_charge < 4) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 4; }	// 3 bars
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_2_X10 + ((ui8_battery_state_of_charge < 3) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 3; }	// 2 bars
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_1_X10 + ((ui8_battery_state_of_charge < 2) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 2; }	// 1 bar
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_EMPTY_X10 + ((ui8_battery_state_of_charge < 1) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 1; }	// blink -> empty
 	else { ui8_battery_state_of_charge = 0; } // undervoltage
 #else // ENABLE_VLCD5 || ENABLE_850C || ENABLE_EKD01
 	if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_OVERVOLTAGE_X10) { ui8_battery_state_of_charge = 9; }		// overvoltage
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_SOC_RESET_X10) { ui8_battery_state_of_charge = 8; }	// 6 bars -> SOC reset
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_FULL_X10) { ui8_battery_state_of_charge = 7; }	// 6 bars -> full
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_5_X10) { ui8_battery_state_of_charge = 6; }	// 5 bars
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_4_X10) { ui8_battery_state_of_charge = 5; }	// 4 bars
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_3_X10) { ui8_battery_state_of_charge = 4; }	// 3 bars
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_2_X10) { ui8_battery_state_of_charge = 3; }	// 2 bars
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_1_X10) { ui8_battery_state_of_charge = 2; }	// 1 bar
-	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > BATTERY_SOC_VOLTS_EMPTY_X10) { ui8_battery_state_of_charge = 1; }	// blink -> empty
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_SOC_RESET_X10 + ((ui8_battery_state_of_charge < 8) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 8; }	// 6 bars -> SOC reset
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_FULL_X10 + ((ui8_battery_state_of_charge < 7) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 7; }	// 6 bars -> full
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_5_X10 + ((ui8_battery_state_of_charge < 6) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 6; }	// 5 bars
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_4_X10 + ((ui8_battery_state_of_charge < 5) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 5; }	// 4 bars
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_3_X10 + ((ui8_battery_state_of_charge < 4) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 4; }	// 3 bars
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_2_X10 + ((ui8_battery_state_of_charge < 3) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 3; }	// 2 bars
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_1_X10 + ((ui8_battery_state_of_charge < 2) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 2; }	// 1 bar
+	else if (ui16_battery_voltage_calibrated_and_filtered_x10 > (BATTERY_SOC_VOLTS_EMPTY_X10 + ((ui8_battery_state_of_charge < 1) ? ui16_hyst : 0U))) { ui8_battery_state_of_charge = 1; }	// blink -> empty
 	else { ui8_battery_state_of_charge = 0; } // undervoltage
 #endif
 	
