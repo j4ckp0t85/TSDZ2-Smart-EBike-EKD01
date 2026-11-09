@@ -20,14 +20,63 @@ It has the following benefits compared to the stock firmware:
 
 This project is being developed and maintained for free by a community of users. Some of them are developers who work professionally developing this type of technology for very well known companies.
 
+## Custom EKD01 1% Battery SOC
+
+This fork offers **Direct 1% SOC (patched N22 only)** for TSDZ2 motors and the
+Tongsheng UART EKD01 display. **Both the motor firmware and the display firmware
+must be changed.** Selecting a motor option does not flash the display, and
+installing the ordinary vendor N22 firmware does not add this feature.
+
+The custom N22 application patch changes the display's battery field from the
+stock 0-12 scale to a direct 0-100 percentage. Use it only with matching motor
+firmware built with:
+
+```c
+#define EKD01_SOC_PERCENT_MODE 1
+```
+
+In [JavaConfigurator.jar](JavaConfigurator.jar), load your usual settings,
+select **EKD01**, then enable **Direct 1% SOC (patched N22 only)** under
+**Basic settings > Display settings**. Older presets leave this option off.
+It is restricted to TSDZ2 and defaults to `0` for unmodified displays. The
+retired experimental 24-byte SOC extension is no longer available.
+
+Before changing the display, preserve the original vendor package and make two
+matching complete flash readbacks. Display flashing is a separate MediaTek
+operation; the tested application-only selection is `PRIMARY_MAUI`, with both
+bootloader entries and OTP unselected and **no Format operation**. Readback
+success does not guarantee recovery after a failed write. Firmware compatibility
+and boot behavior must be checked for the exact hardware; this is not a general
+EKD01 firmware upgrade.
+
+Do not ride with mismatched firmware: a patched display with the old motor
+format can show 0-12%, while an unmodified display with direct-SOC motor firmware
+can show 100% over most of the battery range. After installing the matching pair,
+check startup, errors and battery readings on the physical display and in
+ApexDrive while stationary, before any short road test. Reverting to an
+unmodified display requires disabling the motor option too.
+
+The finer steps improve reporting resolution, not the accuracy of the battery
+estimate. Capacity, voltage calibration and the selected SOC calculation mode
+still matter. In a 9 November 2026 test on one paired N22/TSDZ2 setup, the user
+reported stable screen readings and both captured BLE notifications and the
+ApexDrive CSV recorded `58 -> 57 -> 56 -> 55 -> 54%` without reversals during
+a roughly 25-minute ride. This is a limited reporting test, not a safety or
+full-discharge certification.
+
+See the custom-SOC appendix in the
+[English configurator guide](manuals/EN-Parameter_configurator_guide-TSDZ2-v20.1C.6-update-6.pdf)
+and the [verification record](_INTERNALDOCS/battery-soc-verification.md) for
+the tested hardware, patch details, observations and remaining limitations.
+
 ## Building and flashing with Java tool
-### Windows 
+### Windows
 - Install [SDCC](http://sdcc.sourceforge.net/index.php#Download).
   version 4.4.0 or higher required.
 - Install [ST Visual Development](http://www.st.com/en/development-tools/stvd-stm8.html).
 - Install [Java](https://www.java.com/endownload/).
 - Open JavaConfigurator.jar customize the parameters and click Compile & Flash
-- Or use supplied .bat scripts, e.g. `src/compile_and_flash.bat` 
+- Or use supplied .bat scripts, e.g. `src/compile_and_flash.bat`
 - With 32-bit Windows systems, replace the files in the \tools\cygwin\bin folder with those in the bin_32.zip file
 
 ### Linux and MacOS
@@ -36,7 +85,7 @@ This project is being developed and maintained for free by a community of users.
 - Install Stm8flash `git clone https://github.com/vdudouyt/stm8flash.git && cd stm8flash && make && sudo make install`
 - Install [Java](https://www.java.com/endownload/).
 - Open JavaConfigurator.jar customize the parameters and click Compile & Flash
-- And/Or use supplied shell script `compile_and_flash_20.sh` 
+- And/Or use supplied shell script `compile_and_flash_20.sh`
 
 ### For more information, go to the [wiki](https://github.com/emmebrusa/TSDZ2-Smart-EBike-1/wiki) instructions.
 

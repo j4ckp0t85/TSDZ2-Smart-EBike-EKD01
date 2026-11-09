@@ -10,6 +10,11 @@
 #define __interrupt(x)
 #define __asm__(x)
 #define __trap
+#include "../src/config.h"
+#ifdef TEST_EKD01_SOC_PERCENT_MODE
+#undef EKD01_SOC_PERCENT_MODE
+#define EKD01_SOC_PERCENT_MODE TEST_EKD01_SOC_PERCENT_MODE
+#endif
 #include "../src/ebike_app.c"
 #include "../src/common.c"
 
@@ -43,6 +48,12 @@ void lights_set_state(uint8_t state) { (void)state; assert(!"Unexpected lights c
 
 static uint8_t sent[UART_TX_BUFFER_LEN];
 static unsigned int sent_count;
+
+#if EKD01_SOC_PERCENT_MODE
+#define TEST_FULL_BATTERY_VALUE 100U
+#else
+#define TEST_FULL_BATTERY_VALUE 12U
+#endif
 
 int uart_put_char(int c)
 {
@@ -96,6 +107,7 @@ static uint8_t send_level(void)
     uint8_t checksum = 0;
     sent_count = 0;
     uart_send_package();
+    assert(UART_TX_BUFFER_LEN == 9U);
     assert(sent_count == UART_TX_BUFFER_LEN);
     for (i = 0; i < TX_CHECK_CODE; ++i) checksum += sent[i];
     assert(sent[TX_CHECK_CODE] == checksum);
@@ -103,6 +115,11 @@ static uint8_t send_level(void)
     // SOC must not be smuggled into speed, power, or protocol status bits.
     assert(sent[6] == 0x07 && sent[7] == 0x07);
     assert((sent[2] & 0x0a) == 0);
+#if EKD01_SOC_PERCENT_MODE
+    assert(sent[1] == (ui8_battery_state_of_charge == 0U ? 0U :
+        (ui16_battery_SOC_percentage_x10 >= 1000U ? 100U :
+        (ui16_battery_SOC_percentage_x10 + 5U) / 10U)));
+#endif
     return sent[1];
 }
 
@@ -129,12 +146,12 @@ static void test_startup(void)
     first_voltage = ui16_battery_voltage_calibrated_and_filtered_x10;
     assert(first_voltage == 630U * BATTERY_VOLTAGE_PER_10_BIT_ADC_STEP_X1000 / 100U);
     assert(ui16_battery_SOC_percentage_x10 == 1000);
-    assert(send_level() == 12);
+    assert(send_level() == TEST_FULL_BATTERY_VALUE);
     for (i = 0; i < 100; ++i) {
         tick();
         assert(ui16_battery_voltage_calibrated_and_filtered_x10 == first_voltage);
         assert(ui16_battery_SOC_percentage_x10 == 1000);
-        assert(send_level() == 12);
+        assert(send_level() == TEST_FULL_BATTERY_VALUE);
     }
     assert(ui8_startup_flag); // menu startup still completes
 
@@ -213,8 +230,12 @@ static void test_voltage_curve(void)
 static void test_output_resolution_and_faults(void)
 {
     int soc;
+#if EKD01_SOC_PERCENT_MODE
+    uint8_t last = 100;
+#else
     uint8_t last = 12;
     unsigned int seen = 0;
+#endif
     boot(250, SOC_CALC_AUTO, 630);
     tick();
     // Exact UART payload, including odd levels skipped by the old six-bar map.
@@ -223,13 +244,22 @@ static void test_output_resolution_and_faults(void)
         ui16_battery_SOC_percentage_x10 = (uint16_t)soc;
         level = send_level();
 #if ENABLE_EKD01
+#if EKD01_SOC_PERCENT_MODE
+        assert(level == (soc >= 995 ? 100U : (soc + 5) / 10U));
+        assert(level <= 100 && level <= last && last - level <= 1);
+#else
         assert(level <= 12 && level <= last && last - level <= 1);
         seen |= 1U << level;
+#endif
 #endif
         last = level;
     }
 #if ENABLE_EKD01
+#if EKD01_SOC_PERCENT_MODE
+    assert(last == 0U);
+#else
     assert(seen == 0x1fff); // all 13 codes 0..12, no unsupported 0..100 bytes
+#endif
 #endif
     ui8_battery_state_of_charge = 0;
     ui16_battery_SOC_percentage_x10 = 1000;
@@ -240,7 +270,11 @@ static void test_output_resolution_and_faults(void)
 #else
     ui8_battery_state_of_charge = 9;
 #endif
+#if EKD01_SOC_PERCENT_MODE
+    assert(send_level() == 100);
+#else
     assert(send_level() == 12);
+#endif
     assert(ui8_display_fault_code == ERROR_OVERVOLTAGE);
     ui8_battery_SOC_saved_flag = 1;
     send_level();
