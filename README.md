@@ -68,6 +68,7 @@ See the custom-SOC appendix in the
 [English configurator guide](manuals/EN-Parameter_configurator_guide-TSDZ2-v20.1C.6-update-6.pdf)
 and the [verification record](_INTERNALDOCS/battery-soc-verification.md) for
 the tested hardware, patch details, observations and remaining limitations.
+The N22 SOC firmware patch is available in the [TSDZ2-EKD01-UART-N22-patched-1percent-SOC repository](https://github.com/j4ckp0t85/TSDZ2-EKD01-UART-N22-patched-1percent-SOC).
 
 ## Building and flashing with Java tool
 ### Windows
