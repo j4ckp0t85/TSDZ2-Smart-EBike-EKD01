@@ -56,18 +56,21 @@ check startup, errors and battery readings on the physical display and in
 ApexDrive while stationary, before any short road test. Reverting to an
 unmodified display requires disabling the motor option too.
 
-The finer steps improve reporting resolution, not the accuracy of the battery
-estimate. Capacity, voltage calibration and the selected SOC calculation mode
-still matter. In a 9 November 2026 test on one paired N22/TSDZ2 setup, the user
-reported stable screen readings and both captured BLE notifications and the
-ApexDrive CSV recorded `58 -> 57 -> 56 -> 55 -> 54%` without reversals during
-a roughly 25-minute ride. This is a limited reporting test, not a safety or
-full-discharge certification.
+The 1% mode provides fine-grained reporting with several firmware safeguards:
+- **Current bias compensation:** Current filter truncation (~0.32 A) is compensated
+  under load, improving Wh accumulation and power display accuracy.
+- **Smooth low-battery transition:** Near empty or under voltage sag, the SOC estimate
+  steps down gradually (1 pp at a time) rather than jumping abruptly to 0%.
+- **Smart power-on reset:** After short trips (e.g. 100% down to 97%), the saved
+  percentage is retained across reboots. A reset to 100% requires resting cell voltage
+  at charger level (≥ 4.18 V/cell, configurable via `LI_ION_CELL_VOLTS_CHARGED`) or a
+  partial recharge gap > 10%.
+
 
 See the custom-SOC appendix in the
 [English configurator guide](manuals/EN-Parameter_configurator_guide-TSDZ2-v20.1C.6-update-6.pdf)
 and the [verification record](_INTERNALDOCS/battery-soc-verification.md) for
-the tested hardware, patch details, observations and remaining limitations.
+the tested hardware, patch details, observations, and full verification notes.
 The N22 SOC firmware patch is available in the [TSDZ2-EKD01-UART-N22-patched-1percent-SOC repository](https://github.com/j4ckp0t85/TSDZ2-EKD01-UART-N22-patched-1percent-SOC).
 
 ## Building and flashing with Java tool

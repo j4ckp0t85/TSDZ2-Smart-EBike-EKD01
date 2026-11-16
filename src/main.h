@@ -411,10 +411,25 @@ HALL_COUNTER_OFFSET_UP:    29 -> 44
 #define ADC_10_BIT_BATTERY_VOLTAGE_SHUTDOWN		232 // 20 volt
 // battery voltage reset SOC percentage
 #define BATTERY_VOLTAGE_RESET_SOC_PERCENT_X10   (uint16_t)((float)LI_ION_CELL_RESET_SOC_PERCENT * (float)(BATTERY_CELLS_NUMBER * 10))
+// Rested cell voltage only reached right after a charge; packs recover above the reset voltage after light use.
+#ifndef LI_ION_CELL_VOLTS_CHARGED
+#define LI_ION_CELL_VOLTS_CHARGED				4.18
+#endif
+#define BATTERY_VOLTAGE_CHARGED_SOC_X10			(uint16_t)((((float)LI_ION_CELL_RESET_SOC_PERCENT > (float)LI_ION_CELL_VOLTS_CHARGED) ? (float)LI_ION_CELL_RESET_SOC_PERCENT : (float)LI_ION_CELL_VOLTS_CHARGED) * (float)(BATTERY_CELLS_NUMBER * 10))
 // battery SOC eeprom value saved (8 bit)
 #define BATTERY_SOC								0
 // battery SOC% threshold x10 (15% volt calc)
-#define BATTERY_SOC_PERCENT_THRESHOLD_X10		150
+#define BATTERY_SOC_PERCENT_THRESHOLD_X10		100
+// The motor ISR current filter halves and truncates twice: it reads about two ADC steps low under load.
+#define BATTERY_CURRENT_FILTER_BIAS_ADC			2U
+// Near-empty energy correction rate, in 100 ms check_battery_soc() calls per percentage point.
+#define BATTERY_SOC_PULL_LOW_TICKS				300U
+#define BATTERY_SOC_PULL_EMPTY_TICKS			100U
+// Below this voltage SOC the curve is steep enough to correct the energy estimate at light load.
+#define BATTERY_SOC_PULL_REGION_X10				300U
+#define BATTERY_SOC_PULL_MARGIN_X10				50U
+#define BATTERY_SOC_PULL_MAX_CURRENT_X10		30U
+#define BATTERY_SOC_PULL_SLOW_TICKS				600U
 // SOC calculation
 #define SOC_CALC_AUTO							0
 #define SOC_CALC_WH								1
